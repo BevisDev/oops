@@ -34,6 +34,39 @@ kafka:
       authentication:
         type: scram-sha-512
 
+    # External clients (outside the Kubernetes cluster).
+    # Creates LB services: <cluster>-kafka-external-bootstrap + one per broker.
+    # Bootstrap address: kubectl get kafka <clusterName> -o jsonpath='{.status.listeners[?(@.name=="external")].bootstrapServers}'
+    - name: external
+      port: 9094
+      type: loadbalancer
+      tls: true
+      authentication:
+        type: scram-sha-512
+      configuration:
+        # Optional: restrict who can reach the LBs
+        # loadBalancerSourceRanges:
+        #   - 10.0.0.0/8
+        bootstrap:
+          annotations: {}
+          # ExternalDNS / cloud LB hostname example:
+          # annotations:
+          #   external-dns.alpha.kubernetes.io/hostname: kafka.example.com
+        # Optional: stable DNS per broker (required if you want fixed hostnames)
+        # brokers:
+        #   - broker: 0
+        #     advertisedHost: kafka-0.example.com
+        #     annotations:
+        #       external-dns.alpha.kubernetes.io/hostname: kafka-0.example.com
+        #   - broker: 1
+        #     advertisedHost: kafka-1.example.com
+        #     annotations:
+        #       external-dns.alpha.kubernetes.io/hostname: kafka-1.example.com
+        #   - broker: 2
+        #     advertisedHost: kafka-2.example.com
+        #     annotations:
+        #       external-dns.alpha.kubernetes.io/hostname: kafka-2.example.com
+
   # 14. KafkaAuthorizationSimple schema reference
   # https://strimzi.io/docs/operators/latest/configuring.html#type-KafkaAuthorizationSimple-reference
   authorization:
