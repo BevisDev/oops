@@ -27,6 +27,43 @@ SCRAM (Challenge-Response Authentication)
 | true  | `oauth`           | `SASL_SSL`        | OAuth authentication over TLS                 |
 | true  | `custom`          | Depends           | Custom authentication plugin                  |
 
+## External access (LoadBalancer)
+
+Listener `external` (`type: loadbalancer`, port `9094`, TLS + SCRAM-SHA-512) exposes Kafka to clients outside the cluster.
+
+Strimzi creates:
+
+| Service | Purpose |
+|---------|---------|
+| `<clusterName>-kafka-external-bootstrap` | Bootstrap LoadBalancer |
+| `<clusterName>-kafka-N` (per broker) | Broker LoadBalancer (clients need these too) |
+
+Get bootstrap after the listener is ready:
+
+```bash
+kubectl get kafka <clusterName> -n <ns> \
+  -o jsonpath='{.status.listeners[?(@.name=="external")].bootstrapServers}{"\n"}'
+```
+
+Client config (outside cluster):
+
+```properties
+bootstrap.servers=<EXTERNAL-BOOTSTRAP-FROM-STATUS>
+security.protocol=SASL_SSL
+sasl.mechanism=SCRAM-SHA-512
+sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required \
+  username="<KafkaUser>" password="<password-from-secret>";
+```
+
+Trust the cluster CA from Secret `<clusterName>-cluster-ca-cert` (`ca.crt`).
+
+Notes:
+
+- Kafka needs **bootstrap + each broker** reachable (not a single shared VIP only).
+- For stable DNS, set `configuration.bootstrap.annotations` / `configuration.brokers[].advertisedHost` (e.g. ExternalDNS).
+- Optionally lock down with `loadBalancerSourceRanges`.
+- Create/enable a `KafkaUser` with SCRAM + ACLs before connecting.
+
 
 ## Kafka Node Pool
 
