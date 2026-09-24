@@ -3,11 +3,11 @@ import { useLayoutEffect, useRef, useState } from 'react'
 
 const links = [
   { to: '/', label: 'Overview', end: true },
-  { to: '/sources', label: 'Sources' },
-  { to: '/channels', label: 'Channels' },
+  { to: '/notifications', label: 'Notifications' },
   { to: '/templates', label: 'Templates' },
-  { to: '/routing', label: 'Routing' },
+  { to: '/channels', label: 'Channels' },
   { to: '/recipients', label: 'Recipients' },
+  { to: '/sources', label: 'Sources' },
   { to: '/integrations', label: 'Integrations' },
   { to: '/logs', label: 'Logs' },
   { to: '/playground', label: 'Playground' },
@@ -52,9 +52,9 @@ export function Layout() {
         </nav>
 
         <div className="sidebar-foot">
-          POST /notification/notify
+          UUID → Kafka → adapters
           <br />
-          → Kafka → adapters
+          config on portal only
         </div>
       </aside>
 

@@ -15,16 +15,58 @@ export const channelEndpoints = [
 ]
 
 export const templates = [
-  { code: 'airflow.dag.failed', name: 'Airflow DAG Failed', source: 'airflow', status: 'active', version: 1, channels: ['email', 'msteams'] },
-  { code: 'etl.pipeline.success', name: 'ETL Pipeline Success', source: 'etl', status: 'active', version: 2, channels: ['email'] },
-  { code: 'de.sla.breach', name: 'DE SLA Breach', source: 'de', status: 'active', version: 3, channels: ['email', 'msteams', 'webhook'] },
-  { code: 'core.fraud.suspected', name: 'Fraud Suspected', source: 'core', status: 'draft', version: 1, channels: ['msteams', 'webhook'] },
+  { code: 'airflow.dag.failed', name: 'Airflow DAG Failed', status: 'active', version: 1, channels: ['email', 'msteams'] },
+  { code: 'etl.pipeline.success', name: 'ETL Pipeline Success', status: 'active', version: 2, channels: ['email'] },
+  { code: 'de.sla.breach', name: 'DE SLA Breach', status: 'active', version: 3, channels: ['email', 'msteams', 'webhook'] },
+  { code: 'core.fraud.suspected', name: 'Fraud Suspected', status: 'draft', version: 1, channels: ['msteams', 'webhook'] },
 ]
 
-export const routingRules = [
-  { code: 'airflow-dag-failed-prod', source: 'airflow', event: 'dag.failed', severity: 'error', template: 'airflow.dag.failed', channels: ['email', 'msteams'], group: 'de-oncall', priority: 10, status: 'active' },
-  { code: 'etl-success-info', source: 'etl', event: 'pipeline.success', severity: 'info', template: 'etl.pipeline.success', channels: ['email'], group: 'de-oncall', priority: 50, status: 'active' },
-  { code: 'de-sla-critical', source: 'de', event: 'sla.breach', severity: 'critical', template: 'de.sla.breach', channels: ['email', 'msteams', 'webhook'], group: 'de-oncall', priority: 5, status: 'active' },
+/** Portal-managed notifications — services only pass id (UUID). */
+export const notifications = [
+  {
+    id: 'n1000000-0000-4000-8000-000000000001',
+    code: 'airflow-dag-failed',
+    name: 'Airflow DAG Failed',
+    template: 'airflow.dag.failed',
+    severity: 'error',
+    channels: ['email', 'msteams'],
+    group: 'de-oncall',
+    allowedSources: ['airflow'],
+    status: 'active',
+  },
+  {
+    id: 'n2000000-0000-4000-8000-000000000002',
+    code: 'etl-pipeline-success',
+    name: 'ETL Pipeline Success',
+    template: 'etl.pipeline.success',
+    severity: 'info',
+    channels: ['email'],
+    group: 'de-oncall',
+    allowedSources: ['etl'],
+    status: 'active',
+  },
+  {
+    id: 'n3000000-0000-4000-8000-000000000003',
+    code: 'de-sla-breach',
+    name: 'DE SLA Breach',
+    template: 'de.sla.breach',
+    severity: 'critical',
+    channels: ['email', 'msteams', 'webhook'],
+    group: 'de-oncall',
+    allowedSources: ['de'],
+    status: 'active',
+  },
+  {
+    id: 'n4000000-0000-4000-8000-000000000004',
+    code: 'core-fraud-suspected',
+    name: 'Fraud Suspected',
+    template: 'core.fraud.suspected',
+    severity: 'warning',
+    channels: ['msteams', 'webhook'],
+    group: 'core-alerts',
+    allowedSources: ['core'],
+    status: 'draft',
+  },
 ]
 
 export const recipientGroups = [
@@ -38,11 +80,11 @@ export const integrations = [
 ]
 
 export const deliveries = [
-  { id: 'del_8f2a', request: 'req_91c0', source: 'airflow', event: 'dag.failed', channel: 'msteams', to: 'DE Alerts', status: 'sent', at: '14:12:03' },
-  { id: 'del_8f2b', request: 'req_91c0', source: 'airflow', event: 'dag.failed', channel: 'email', to: 'de-oncall@…', status: 'sent', at: '14:12:04' },
-  { id: 'del_7aa1', request: 'req_88b1', source: 'de', event: 'sla.breach', channel: 'webhook', to: 'pager-bridge', status: 'failed', at: '13:41:22' },
-  { id: 'del_6c10', request: 'req_77a2', source: 'etl', event: 'pipeline.success', channel: 'email', to: 'de-oncall@…', status: 'sent', at: '12:05:11' },
-  { id: 'del_5b09', request: 'req_66z1', source: 'core', event: 'order.fraud_suspected', channel: 'msteams', to: 'Core Ops', status: 'sent', at: '10:22:48' },
+  { id: 'del_8f2a', request: 'req_91c0', notificationId: 'n1000000-…0001', code: 'airflow-dag-failed', source: 'airflow', channel: 'msteams', to: 'DE Alerts', status: 'sent', at: '14:12:03' },
+  { id: 'del_8f2b', request: 'req_91c0', notificationId: 'n1000000-…0001', code: 'airflow-dag-failed', source: 'airflow', channel: 'email', to: 'de-oncall@…', status: 'sent', at: '14:12:04' },
+  { id: 'del_7aa1', request: 'req_88b1', notificationId: 'n3000000-…0003', code: 'de-sla-breach', source: 'de', channel: 'webhook', to: 'pager-bridge', status: 'failed', at: '13:41:22' },
+  { id: 'del_6c10', request: 'req_77a2', notificationId: 'n2000000-…0002', code: 'etl-pipeline-success', source: 'etl', channel: 'email', to: 'de-oncall@…', status: 'sent', at: '12:05:11' },
+  { id: 'del_5b09', request: 'req_66z1', notificationId: 'n4000000-…0004', code: 'core-fraud-suspected', source: 'core', channel: 'msteams', to: 'Core Ops', status: 'sent', at: '10:22:48' },
 ]
 
 export const overview = {
@@ -83,8 +125,7 @@ export const sampleTemplateBodies = {
   ]
 }`,
   webhookBody: `{
-  "event": "{{event_type}}",
-  "severity": "{{severity}}",
+  "notification_id": "{{notification_id}}",
   "dag_id": "{{dag_id}}",
   "error": "{{error}}"
 }`,

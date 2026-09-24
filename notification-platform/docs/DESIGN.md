@@ -1,135 +1,87 @@
 # Design — Notification Platform
 
-## 1. Problem
+## 1. Principle
 
-Nhiều hệ thống (Airflow, ETL, DE service, Core, …) cần gửi thông báo qua
-**MS Teams** và **Email**, đồng thời có thể **gọi tiếp service notify khác**
-(Pager bridge, Slack gateway, OMS, …). Cần:
+**Portal sở hữu cấu hình. Service chỉ biết UUID.**
 
-- Một endpoint chuẩn: `POST /notification/notify`
-- Pub/sub qua Kafka (không block caller)
-- Template quản lý trên UI
-- Schema Postgres mở rộng cho nhiều source / channel / service
+| Trên portal | Service truyền |
+|-------------|----------------|
+| Template (email / Teams / webhook body) | `notification_id` (UUID) |
+| Channels + endpoints | `payload` (biến động, optional) |
+| Recipient groups | `idempotency_key` / `correlation_id` (optional) |
+| Severity, ACL source | |
 
-## 2. Flow chính
+Đổi Teams webhook, thêm email, sửa template → chỉ sửa portal, **không** redeploy Airflow/ETL/Core.
+
+## 2. Flow
 
 ```mermaid
 sequenceDiagram
-  participant S as Source (Airflow/ETL/DE/Core)
-  participant API as Notification API
+  participant P as Portal
+  participant S as Source service
+  participant API as Notify API
   participant PG as PostgreSQL
   participant K as Kafka
   participant W as Worker
-  participant C as Channel (Email/Teams/HTTP)
 
-  S->>API: POST /notification/notify (+ API key)
-  API->>PG: validate client, resolve routing (optional)
-  API->>PG: insert notification_requests (accepted)
-  API->>K: produce notification.events
+  P->>PG: Create notification UUID + template + targets
+  Note over S: Chỉ lưu UUID trong config
+  S->>API: POST { notification_id, payload }
+  API->>PG: Load notification (must be active)
+  API->>PG: Insert notification_requests
+  API->>K: Produce notification.events
   API-->>S: 202 { request_id }
-  K->>W: consume
-  W->>PG: load rule + template version + recipients
-  W->>W: render template(payload)
-  W->>C: send
-  W->>PG: delivery + attempt logs
+  K->>W: Consume
+  W->>PG: Template versions + targets + recipients
+  W->>W: Render & send Email / Teams / HTTP
 ```
 
-### Caller contract (minimal)
-
-Caller chỉ cần biết:
-
-| Field | Required | Note |
-|-------|----------|------|
-| `event_type` | yes | `dag.failed`, `pipeline.success`, … |
-| `payload` | yes | biến cho template |
-| `severity` | no | default `info` |
-| `idempotency_key` | no | dedupe |
-| `correlation_id` | no | `dag_run_id` / `trace_id` |
-| `template_code` | no | bypass routing nếu biết sẵn |
-| `channels` | no | override channel list |
-| `recipients` | no | override / bổ sung recipients |
-
-Routing mặc định: `(source_system, event_type, severity, match_expr)` → template + channels + recipient groups.
-
-## 3. Domain model
+## 3. Domain
 
 ```
-source_systems ──┬── api_clients
-                 └── routing_rules ──┬── templates ── template_versions
-                                     └── routing_rule_channels
-                                              ├── channels ── channel_endpoints
-                                              └── recipient_groups ── recipients
+notifications (UUID) ── template
+       │
+       ├── notification_targets → channels / endpoints / recipient_groups
+       │                      → service_integrations (webhook)
+       └── notification_allowed_sources → source_systems
 
-notification_requests ── notification_deliveries ── delivery_attempts
+source_systems ── api_clients
 
-service_integrations ── channel_endpoints (webhook type)
+notification_requests(notification_id, payload)
+       └── notification_deliveries ── delivery_attempts
 ```
 
-### Extensibility
+Không còn `routing_rules` phía caller — **notification = đơn vị cấu hình**.
 
-| Muốn thêm… | Làm gì |
-|------------|--------|
-| Source mới (Flink, Spark) | Insert `source_systems` + API key |
-| Channel mới (Slack, SMS) | Insert `channels` + adapter trong worker |
-| Endpoint SMTP / Teams mới | Insert `channel_endpoints` |
-| Gọi service khác | Channel type `webhook` + `service_integrations` |
-| Template mới | UI tạo template + version per channel |
-| Rule mới | UI tạo routing rule |
+## 4. Extensibility
 
-Không cần migrate schema khi thêm source/channel type mới (chỉ thêm CHECK value nếu muốn cứng).
+| Thêm… | Portal làm gì | Service làm gì |
+|-------|---------------|----------------|
+| Noti mới | Tạo notification → copy UUID | Gắn UUID vào config |
+| Channel mới cho noti có sẵn | Thêm `notification_targets` | Không đổi |
+| Source mới | Đăng ký source + API key + ACL | Gọi cùng UUID (nếu được allow) |
+| Gọi service khác | Target channel `webhook` + integration | Không đổi |
 
-## 4. Kafka
-
-| Topic | Key | Value |
-|-------|-----|-------|
-| `notification.events` | `source_system` \| `event_type` | NotifyEvent (JSON) |
-| `notification.events.dlq` | same | failed after max retries |
-| `notification.retry` | delivery_id | optional delayed retry topic |
-
-Message envelope: xem `docs/API.md`.
-
-Partition theo `source_system` để giữ thứ tự tương đối per source.
-
-## 5. Worker responsibilities
-
-1. Consume `notification.events`
-2. Resolve routing (nếu API chưa gắn rule) hoặc dùng rule đã gắn
-3. Load active `template_versions` theo `channel_type`
-4. Render (Mustache / Jinja2) — escape theo channel
-5. Expand recipient groups
-6. Create `notification_deliveries` rows
-7. Call channel adapter:
-   - **email** → SMTP / SES
-   - **msteams** → Incoming Webhook / Adaptive Card
-   - **webhook** → HTTP POST tới service khác (mapping từ `service_integrations`)
-8. Retry với backoff; sau `max_attempts` → `dead` + DLQ
-
-## 6. UI surfaces
+## 5. UI surfaces
 
 | Screen | Job |
 |--------|-----|
-| Overview | Success rate, volume by source/channel |
-| Sources | Register systems + API keys |
-| Channels | Email / Teams / Webhook endpoints |
-| Templates | Editor + preview + version history |
-| Routing | Map event → template + channels + groups |
-| Recipients | People / groups |
-| Integrations | Other services (webhook adapters) |
-| Logs | Request & delivery search |
-| Playground | Send test notify |
+| **Notifications** | CRUD đơn vị UUID; gắn template, channels, groups, ACL; copy UUID |
+| Templates | Bodies per channel + variables schema |
+| Channels | Email / Teams / HTTP endpoints |
+| Recipients | Groups |
+| Sources | API keys |
+| Integrations | Other services |
+| Logs | By notification_id |
+| Playground | Test bằng UUID + payload |
 
-Chi tiết wireframe: `docs/UI.md`.
+## 6. Security
 
-## 7. Security
+- API key per source; optional ACL trên từng notification UUID
+- Secrets chỉ qua Vault `secret_ref`
+- Payload validate theo `variables_schema` của template/notification
 
-- API key per source client (hash lưu DB, prefix để identify)
-- Secrets (SMTP password, Teams webhook URL) chỉ qua Vault `secret_ref`
-- Scope tối thiểu: `notify` | `admin`
-- Idempotency key tránh spam duplicate
-- Rate limit per `api_client`
+## 7. Non-goals (v1)
 
-## 8. Non-goals (v1)
-
-- In-app user inbox / push mobile
-- Full marketing email campaign builder
-- Real-time chat bot conversation
+- Caller chọn channel/recipient lúc runtime
+- Event-type routing từ phía service

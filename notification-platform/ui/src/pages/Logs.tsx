@@ -17,7 +17,9 @@ export function LogsPage() {
     <>
       <header className="page-head">
         <h1>Logs</h1>
-        <p>Audit trail of <span className="mono">notification_requests</span> and per-channel deliveries.</p>
+        <p>
+          Audit theo <span className="mono">notification_id</span> — cấu hình luôn lấy từ portal tại thời điểm gửi.
+        </p>
       </header>
 
       <div className="toolbar">
@@ -46,9 +48,9 @@ export function LogsPage() {
           <thead>
             <tr>
               <th>Delivery</th>
-              <th>Request</th>
+              <th>Notification</th>
+              <th>UUID</th>
               <th>Source</th>
-              <th>Event</th>
               <th>Channel</th>
               <th>Recipient</th>
               <th>Status</th>
@@ -59,11 +61,11 @@ export function LogsPage() {
             {rows.map((d) => (
               <tr key={d.id}>
                 <td className="mono">{d.id}</td>
-                <td className="mono">{d.request}</td>
+                <td className="mono">{d.code}</td>
+                <td className="mono">{d.notificationId}</td>
                 <td>
                   <span className="badge brand">{d.source}</span>
                 </td>
-                <td className="mono">{d.event}</td>
                 <td>{d.channel}</td>
                 <td>{d.to}</td>
                 <td>

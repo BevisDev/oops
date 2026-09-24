@@ -19,7 +19,10 @@ export function TemplatesPage() {
     <>
       <header className="page-head">
         <h1>Templates</h1>
-        <p>Versioned bodies per channel. Variables come from the notify <span className="mono">payload</span>; schema is validated on ingest.</p>
+        <p>
+          Bodies gắn vào notification trên portal. Service chỉ gửi biến trong <span className="mono">payload</span> —
+          không chọn template lúc runtime.
+        </p>
       </header>
 
       <div className="split">
@@ -32,8 +35,7 @@ export function TemplatesPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Code</th>
-                  <th>Source</th>
+                    <th>Code</th>
                   <th>Ver</th>
                   <th>Status</th>
                 </tr>
@@ -46,7 +48,6 @@ export function TemplatesPage() {
                     style={{ cursor: 'pointer', background: t.code === selected ? 'rgba(45,212,191,0.08)' : undefined }}
                   >
                     <td className="mono">{t.code}</td>
-                    <td>{t.source}</td>
                     <td className="mono">v{t.version}</td>
                     <td>
                       <span className={`badge ${t.status === 'active' ? 'ok' : 'warn'}`}>{t.status}</span>

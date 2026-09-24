@@ -6,18 +6,31 @@ Auth: `Authorization: Bearer <api_key>` hoặc header `X-Api-Key`.
 
 ---
 
+## Caller contract (quan trọng)
+
+Service **chỉ truyền UUID notification** đã cấu hình trên portal.
+Template, channel, recipient, severity — **không** nằm trong request.
+
+```json
+{
+  "notification_id": "n1000000-0000-4000-8000-000000000001",
+  "payload": { }
+}
+```
+
+`payload` chỉ chứa biến động để render template (optional nếu template không cần biến).
+
+---
+
 ## POST `/notification/notify`
 
-Ingest một sự kiện thông báo. API validate → ghi `notification_requests` → pub Kafka → `202 Accepted`.
+Validate UUID → load portal config → ghi `notification_requests` → pub Kafka → `202`.
 
 ### Request
 
 ```json
 {
-  "event_type": "dag.failed",
-  "severity": "error",
-  "idempotency_key": "airflow:dag.failed:shop_etl:2026-09-24T01:00:00Z",
-  "correlation_id": "manual__2026-09-24T01:00:00+00:00",
+  "notification_id": "n1000000-0000-4000-8000-000000000001",
   "payload": {
     "dag_id": "shop_etl",
     "run_id": "manual__2026-09-24T01:00:00+00:00",
@@ -26,32 +39,21 @@ Ingest một sự kiện thông báo. API validate → ghi `notification_request
     "log_url": "https://airflow.company.com/dags/shop_etl/grid",
     "env": "prod"
   },
-  "template_code": null,
-  "channels": null,
-  "recipients": {
-    "email": ["de-oncall@company.com"],
-    "msteams": []
-  },
-  "metadata": {
-    "env": "prod",
-    "region": "apse"
-  }
+  "idempotency_key": "airflow:n1000000:manual__2026-09-24T01:00:00+00:00",
+  "correlation_id": "manual__2026-09-24T01:00:00+00:00"
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `event_type` | string | yes | Logical event name |
-| `severity` | enum | no | `info` \| `warning` \| `error` \| `critical` |
-| `payload` | object | yes | Template variables |
-| `idempotency_key` | string | no | Dedupe per source (24h+) |
+| `notification_id` | UUID | **yes** | ID cấu hình trên portal |
+| `payload` | object | no | Biến template (validate theo `variables_schema`) |
+| `idempotency_key` | string | no | Dedupe per notification |
 | `correlation_id` | string | no | Cross-system trace |
-| `template_code` | string | no | Skip routing; use this template |
-| `channels` | string[] | no | e.g. `["email","msteams","webhook"]` |
-| `recipients` | object | no | Per-channel address lists |
-| `metadata` | object | no | Free-form; usable in `match_expr` |
 
-`source_system` được suy ra từ API key, **không** tin field từ body.
+**Không** nhận: `event_type`, `channels`, `recipients`, `template_code`, `severity` — tất cả lấy từ portal.
+
+`source_system` suy ra từ API key. Nếu notification có ACL (`notification_allowed_sources`), source phải nằm trong whitelist.
 
 ### Response `202`
 
@@ -59,7 +61,8 @@ Ingest một sự kiện thông báo. API validate → ghi `notification_request
 {
   "request_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "status": "queued",
-  "matched_rule": "airflow-dag-failed-prod",
+  "notification_id": "n1000000-0000-4000-8000-000000000001",
+  "notification_code": "airflow-dag-failed",
   "channels": ["email", "msteams"]
 }
 ```
@@ -68,10 +71,12 @@ Ingest một sự kiện thông báo. API validate → ghi `notification_request
 
 | Code | When |
 |------|------|
-| `400` | Invalid body / schema |
+| `400` | Missing `notification_id` / invalid payload schema |
 | `401` | Missing/invalid API key |
-| `409` | Duplicate `idempotency_key` (return original `request_id`) |
-| `422` | No routing rule & no `template_code` |
+| `403` | Source not allowed for this notification |
+| `404` | Unknown or archived notification UUID |
+| `409` | Duplicate `idempotency_key` |
+| `422` | Notification status ≠ `active` |
 | `429` | Rate limited |
 
 ---
@@ -80,31 +85,26 @@ Ingest một sự kiện thông báo. API validate → ghi `notification_request
 
 Chi tiết request + deliveries.
 
-## GET `/notification/deliveries?status=&source=&from=&to=`
+## GET `/notification/deliveries?notification_id=&status=&from=&to=`
 
-Search delivery logs (UI Logs screen).
+Search delivery logs.
 
-## Admin CRUD (UI backend)
+## Admin CRUD (portal)
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| CRUD | `/admin/sources` | Source systems |
-| CRUD | `/admin/api-clients` | API keys |
-| CRUD | `/admin/channels` | Channels |
-| CRUD | `/admin/channel-endpoints` | SMTP / Teams / HTTP configs |
-| CRUD | `/admin/templates` | Templates |
-| POST | `/admin/templates/{id}/versions` | New version |
-| POST | `/admin/templates/{id}/preview` | Render preview |
-| CRUD | `/admin/routing-rules` | Routing |
+| CRUD | `/admin/notifications` | **Đơn vị chính** — UUID, targets, ACL |
+| POST | `/admin/notifications/{id}/copy-uuid` | Convenience |
+| CRUD | `/admin/templates` | Bodies per channel |
+| CRUD | `/admin/channels` / `channel-endpoints` | SMTP / Teams / HTTP |
 | CRUD | `/admin/recipient-groups` | Groups |
+| CRUD | `/admin/sources` / `api-clients` | Who can call |
 | CRUD | `/admin/integrations` | Other services |
-| POST | `/admin/playground/notify` | Test send |
+| POST | `/admin/playground/notify` | Test by UUID |
 
 ---
 
 ## Kafka — `notification.events`
-
-### Envelope
 
 ```json
 {
@@ -116,89 +116,28 @@ Search delivery logs (UI Logs screen).
   "datacontenttype": "application/json",
   "data": {
     "request_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "notification_id": "n1000000-0000-4000-8000-000000000001",
+    "notification_code": "airflow-dag-failed",
     "source_system": "airflow",
-    "event_type": "dag.failed",
     "severity": "error",
-    "payload": { "...": "..." },
-    "routing": {
-      "rule_code": "airflow-dag-failed-prod",
-      "template_code": "airflow.dag.failed",
-      "channels": [
-        {
-          "channel": "email",
-          "endpoint": "smtp-primary",
-          "recipient_group": "de-oncall"
-        },
-        {
-          "channel": "msteams",
-          "endpoint": "teams-de-alerts",
-          "recipient_group": "de-oncall"
-        }
-      ]
-    },
-    "recipients_override": {
-      "email": ["de-oncall@company.com"]
-    },
-    "correlation_id": "manual__2026-09-24T01:00:00+00:00",
-    "metadata": { "env": "prod" }
+    "template_id": "a1000000-0000-4000-8000-000000000001",
+    "template_version": 1,
+    "payload": { "dag_id": "shop_etl", "...": "..." },
+    "targets": [
+      {
+        "channel": "email",
+        "endpoint": "smtp-primary",
+        "recipient_group": "de-oncall"
+      },
+      {
+        "channel": "msteams",
+        "endpoint": "teams-de-alerts",
+        "recipient_group": "de-oncall"
+      }
+    ],
+    "correlation_id": "manual__2026-09-24T01:00:00+00:00"
   }
 }
 ```
 
-### Headers (recommended)
-
-| Header | Value |
-|--------|-------|
-| `ce_type` | `notification.notify.v1` |
-| `source_system` | `airflow` |
-| `event_type` | `dag.failed` |
-| `correlation_id` | … |
-
----
-
-## Channel adapter payloads (worker → provider)
-
-### Email
-
-```json
-{
-  "from": "noreply@company.com",
-  "to": ["de-oncall@company.com"],
-  "subject": "[prod] DAG failed: shop_etl",
-  "html": "<h2>DAG failed</h2>..."
-}
-```
-
-### MS Teams (Adaptive Card)
-
-POST tới Incoming Webhook URL (từ Vault):
-
-```json
-{
-  "type": "message",
-  "attachments": [
-    {
-      "contentType": "application/vnd.microsoft.card.adaptive",
-      "content": { "...rendered adaptive card..." }
-    }
-  ]
-}
-```
-
-### Webhook / other service
-
-```http
-POST {base_url}
-Content-Type: application/json
-X-Correlation-Id: {correlation_id}
-
-{
-  "event_type": "dag.failed",
-  "severity": "error",
-  "source_system": "airflow",
-  "payload": { "...": "..." },
-  "rendered": { "body": "..." }
-}
-```
-
-Mapping có thể customize qua `service_integrations.request_mapping`.
+Worker **không** resolve routing — snapshot targets đã gắn từ portal lúc ingest (hoặc worker load lại theo `notification_id`).

@@ -1,40 +1,40 @@
-# Airflow — DAG failed
+# Airflow — chỉ truyền notification UUID
 
 ```bash
+# UUID lấy từ portal (Notifications → Copy UUID)
+NOTIF_ID=n1000000-0000-4000-8000-000000000001
+
 curl -sS -X POST https://notif.company.com/notification/notify \
   -H "X-Api-Key: $AIRFLOW_NOTIF_KEY" \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: airflow:dag.failed:${DAG_ID}:${RUN_ID}" \
-  -d @- <<EOF
-{
-  "event_type": "dag.failed",
-  "severity": "error",
-  "idempotency_key": "airflow:dag.failed:${DAG_ID}:${RUN_ID}",
-  "correlation_id": "${RUN_ID}",
-  "payload": {
-    "dag_id": "${DAG_ID}",
-    "run_id": "${RUN_ID}",
-    "logical_date": "${LOGICAL_DATE}",
-    "error": "${ERROR_MESSAGE}",
-    "log_url": "${LOG_URL}",
-    "env": "prod"
-  }
-}
-EOF
+  -d "{
+    \"notification_id\": \"${NOTIF_ID}\",
+    \"idempotency_key\": \"airflow:${NOTIF_ID}:${RUN_ID}\",
+    \"correlation_id\": \"${RUN_ID}\",
+    \"payload\": {
+      \"dag_id\": \"${DAG_ID}\",
+      \"run_id\": \"${RUN_ID}\",
+      \"logical_date\": \"${LOGICAL_DATE}\",
+      \"error\": \"${ERROR_MESSAGE}\",
+      \"log_url\": \"${LOG_URL}\",
+      \"env\": \"prod\"
+    }
+  }"
 ```
 
-Python callback (Airflow):
+Python callback — không chọn channel/template:
 
 ```python
 import json, urllib.request, os
+
+NOTIF_ID = os.environ["NOTIF_AIRFLOW_DAG_FAILED_UUID"]  # từ portal
 
 def on_failure_callback(context):
     dag = context["dag"].dag_id
     run_id = context["run_id"]
     body = {
-        "event_type": "dag.failed",
-        "severity": "error",
-        "idempotency_key": f"airflow:dag.failed:{dag}:{run_id}",
+        "notification_id": NOTIF_ID,
+        "idempotency_key": f"airflow:{NOTIF_ID}:{run_id}",
         "correlation_id": run_id,
         "payload": {
             "dag_id": dag,

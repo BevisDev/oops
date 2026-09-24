@@ -1,16 +1,17 @@
-# ETL / DE / Core — sample notify calls
+# ETL / DE / Core — chỉ truyền UUID
 
-## ETL pipeline success
+Mọi cấu hình (template, email, Teams, webhook sang service khác) nằm trên portal.
+Service chỉ biết UUID đã được cấp.
+
+## ETL
 
 ```bash
 curl -sS -X POST https://notif.company.com/notification/notify \
   -H "X-Api-Key: $ETL_NOTIF_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type": "pipeline.success",
-    "severity": "info",
-    "idempotency_key": "etl:pipeline.success:orders_daily:2026-09-24",
-    "correlation_id": "orders_daily-2026-09-24",
+    "notification_id": "n2000000-0000-4000-8000-000000000002",
+    "idempotency_key": "etl:orders_daily:2026-09-24",
     "payload": {
       "pipeline": "orders_daily",
       "rows": 1254301,
@@ -20,47 +21,39 @@ curl -sS -X POST https://notif.company.com/notification/notify \
   }'
 ```
 
-## DE service — SLA breach (email + teams + pager webhook)
+## DE — SLA (portal đã gắn email + teams + pager webhook)
 
 ```bash
 curl -sS -X POST https://notif.company.com/notification/notify \
   -H "X-Api-Key: $DE_NOTIF_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type": "sla.breach",
-    "severity": "critical",
+    "notification_id": "n3000000-0000-4000-8000-000000000003",
     "payload": {
       "service": "quality-gate",
       "metric": "freshness_hours",
       "value": 26,
       "threshold": 12,
       "table": "mart.orders"
-    },
-    "channels": ["email", "msteams", "webhook"],
-    "recipients": {
-      "email": ["de-oncall@company.com"]
     }
   }'
 ```
 
-## Core — call NotifyHub which fans out to another service
-
-Khi routing rule gắn channel `webhook` → worker POST sang service khác
-(ví dụ `pager-bridge`, `oms-alert`) theo `service_integrations`.
+## Core
 
 ```bash
 curl -sS -X POST https://notif.company.com/notification/notify \
   -H "X-Api-Key: $CORE_NOTIF_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type": "order.fraud_suspected",
-    "severity": "warning",
+    "notification_id": "n4000000-0000-4000-8000-000000000004",
     "correlation_id": "ord_9f2a",
     "payload": {
       "order_id": "ord_9f2a",
       "score": 0.91,
       "customer_id": "cus_11"
-    },
-    "template_code": "core.fraud.suspected"
+    }
   }'
 ```
+
+Muốn đổi channel / recipient / template → sửa trên portal, **không** đổi code service.

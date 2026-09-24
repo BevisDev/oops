@@ -29,8 +29,8 @@ export function OverviewPage() {
       <header className="page-head">
         <h1>NotifyHub</h1>
         <p>
-          Central bus for Airflow, ETL, DE, and Core — templates on UI, delivery via Email, MS Teams,
-          and HTTP services.
+          Portal owns templates, channels, and recipients. Services only pass a notification UUID —
+          then Email, MS Teams, or HTTP adapters deliver.
         </p>
       </header>
 
@@ -113,8 +113,8 @@ export function OverviewPage() {
             <thead>
               <tr>
                 <th>Time</th>
+                <th>Notification</th>
                 <th>Source</th>
-                <th>Event</th>
                 <th>Channel</th>
                 <th>To</th>
                 <th>Status</th>
@@ -124,10 +124,10 @@ export function OverviewPage() {
               {deliveries.slice(0, 5).map((d) => (
                 <tr key={d.id}>
                   <td className="mono">{d.at}</td>
+                  <td className="mono">{d.code}</td>
                   <td>
                     <span className="badge brand">{d.source}</span>
                   </td>
-                  <td className="mono">{d.event}</td>
                   <td>{d.channel}</td>
                   <td>{d.to}</td>
                   <td>

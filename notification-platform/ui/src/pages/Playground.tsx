@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { sources } from '../data/mock'
+import { notifications } from '../data/mock'
 
 const defaultPayload = `{
   "dag_id": "shop_etl",
@@ -11,11 +11,12 @@ const defaultPayload = `{
 }`
 
 export function PlaygroundPage() {
-  const [source, setSource] = useState('airflow')
-  const [eventType, setEventType] = useState('dag.failed')
-  const [severity, setSeverity] = useState('error')
+  const active = notifications.filter((n) => n.status === 'active')
+  const [notificationId, setNotificationId] = useState(active[0]?.id ?? notifications[0].id)
   const [payload, setPayload] = useState(defaultPayload)
   const [result, setResult] = useState<string | null>(null)
+
+  const selected = notifications.find((n) => n.id === notificationId)
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -24,6 +25,10 @@ export function PlaygroundPage() {
       parsed = JSON.parse(payload)
     } catch {
       setResult('Invalid JSON payload')
+      return
+    }
+    if (!selected || selected.status !== 'active') {
+      setResult('Notification must be active')
       return
     }
     const requestId = crypto.randomUUID()
@@ -35,11 +40,9 @@ export function PlaygroundPage() {
           body: {
             request_id: requestId,
             status: 'queued',
-            source_system: source,
-            event_type: eventType,
-            severity,
-            matched_rule: source === 'airflow' ? 'airflow-dag-failed-prod' : null,
-            channels: ['email', 'msteams'],
+            notification_id: selected.id,
+            notification_code: selected.code,
+            channels: selected.channels,
             kafka_topic: 'notification.events',
             payload: parsed,
           },
@@ -54,37 +57,30 @@ export function PlaygroundPage() {
     <>
       <header className="page-head">
         <h1>Playground</h1>
-        <p>Simulate a source calling notify. In production this publishes to Kafka; here we show the accepted envelope.</p>
+        <p>
+          Giống service gọi thật: chỉ chọn <span className="mono">notification_id</span> + payload. Channel/template lấy từ
+          portal.
+        </p>
       </header>
 
       <form className="panel" onSubmit={onSubmit}>
-        <div className="grid-3">
-          <div className="field">
-            <label>Source</label>
-            <select value={source} onChange={(e) => setSource(e.target.value)}>
-              {sources.map((s) => (
-                <option key={s.code} value={s.code}>
-                  {s.code}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>Event type</label>
-            <input value={eventType} onChange={(e) => setEventType(e.target.value)} />
-          </div>
-          <div className="field">
-            <label>Severity</label>
-            <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
-              <option value="info">info</option>
-              <option value="warning">warning</option>
-              <option value="error">error</option>
-              <option value="critical">critical</option>
-            </select>
-          </div>
+        <div className="field">
+          <label>notification_id</label>
+          <select value={notificationId} onChange={(e) => setNotificationId(e.target.value)}>
+            {notifications.map((n) => (
+              <option key={n.id} value={n.id} disabled={n.status !== 'active'}>
+                {n.code} · {n.id} {n.status !== 'active' ? `(${n.status})` : ''}
+              </option>
+            ))}
+          </select>
         </div>
+        {selected && (
+          <p className="empty-hint" style={{ marginTop: '0.5rem' }}>
+            → {selected.channels.join(' + ')} · group {selected.group} · template {selected.template}
+          </p>
+        )}
         <div className="field" style={{ marginTop: '1rem' }}>
-          <label>Payload JSON</label>
+          <label>Payload JSON (template variables only)</label>
           <textarea value={payload} onChange={(e) => setPayload(e.target.value)} rows={12} />
         </div>
         <div className="form-actions">

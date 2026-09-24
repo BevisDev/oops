@@ -8,7 +8,9 @@ export function SourcesPage() {
     <>
       <header className="page-head">
         <h1>Sources</h1>
-        <p>Systems that call <span className="mono">POST /notification/notify</span>. Each source gets API keys; source is derived from the key, not the body.</p>
+        <p>
+          Hệ thống được cấp API key để gọi notify. Source suy ra từ key; ACL trên từng notification UUID (portal).
+        </p>
       </header>
 
       <div className="toolbar">

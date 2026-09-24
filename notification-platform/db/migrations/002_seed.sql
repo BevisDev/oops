@@ -1,4 +1,4 @@
--- Seed data for local / staging demo
+-- Seed: portal-managed notifications; callers only need the UUID.
 
 INSERT INTO source_systems (code, display_name, description, owner_team) VALUES
     ('airflow', 'Apache Airflow', 'DAG & task lifecycle events', 'data-platform'),
@@ -18,7 +18,7 @@ JOIN (VALUES
     ('email', 'smtp-primary', 'Primary SMTP',
      '{"from":"noreply@company.com","host":"smtp.company.com","port":587,"use_tls":true}', TRUE),
     ('msteams', 'teams-de-alerts', 'DE Alerts channel',
-     '{"theme_color_default":"0078D4","mention_oncall":true}', TRUE),
+     '{"theme_color_default":"0078D4"}', TRUE),
     ('webhook', 'svc-pager-bridge', 'Pager bridge service',
      '{"base_url":"http://pager-bridge.internal/v1/alert","method":"POST","timeout_ms":5000}', TRUE)
 ) AS v(channel_code, code, display_name, config, is_default)
@@ -40,16 +40,15 @@ CROSS JOIN recipients r
 WHERE (g.code = 'de-oncall' AND r.address IN ('de-oncall@company.com', 'teams://channel/de-alerts'))
    OR (g.code = 'core-alerts' AND r.address IN ('platform@company.com'));
 
--- Template: Airflow DAG failed
-INSERT INTO templates (code, display_name, description, source_system_id, variables_schema, status, current_version, created_by)
-SELECT
+INSERT INTO templates (id, code, display_name, description, variables_schema, status, current_version, created_by)
+VALUES (
+    'a1000000-0000-4000-8000-000000000001',
     'airflow.dag.failed',
     'Airflow DAG Failed',
-    'Sent when a DAG run ends in failed state',
-    s.id,
+    'Body for DAG failure alerts',
     '{
       "type":"object",
-      "required":["dag_id","run_id","logical_date","error"],
+      "required":["dag_id","run_id","error"],
       "properties":{
         "dag_id":{"type":"string"},
         "run_id":{"type":"string"},
@@ -62,52 +61,57 @@ SELECT
     'active',
     1,
     'seed'
+);
+
+INSERT INTO template_versions (template_id, version, channel_type, subject, body, body_format, created_by)
+VALUES
+(
+    'a1000000-0000-4000-8000-000000000001', 1, 'email',
+    '[{{env}}] DAG failed: {{dag_id}}',
+    '<h2>DAG failed</h2><p><b>{{dag_id}}</b> / {{run_id}}</p><p>{{error}}</p><p><a href="{{log_url}}">View logs</a></p>',
+    'html', 'seed'
+),
+(
+    'a1000000-0000-4000-8000-000000000001', 1, 'msteams',
+    NULL,
+    '{"type":"AdaptiveCard","body":[{"type":"TextBlock","size":"Large","weight":"Bolder","text":"DAG failed: {{dag_id}}","color":"Attention"}]}',
+    'adaptive_card', 'seed'
+);
+
+-- Fixed UUID so services can hardcode / inject from config
+INSERT INTO notifications (id, code, display_name, description, template_id, severity, status, created_by)
+VALUES (
+    'n1000000-0000-4000-8000-000000000001',
+    'airflow-dag-failed',
+    'Airflow DAG Failed',
+    'Portal config: email + Teams → de-oncall. Services only pass this UUID.',
+    'a1000000-0000-4000-8000-000000000001',
+    'error',
+    'active',
+    'seed'
+);
+
+INSERT INTO notification_allowed_sources (notification_id, source_system_id)
+SELECT 'n1000000-0000-4000-8000-000000000001', s.id
 FROM source_systems s WHERE s.code = 'airflow';
 
-INSERT INTO template_versions (template_id, version, channel_type, subject, body, body_format, created_by)
-SELECT t.id, 1, 'email',
-       '[{{env}}] DAG failed: {{dag_id}}',
-       '<h2>DAG failed</h2><p><b>{{dag_id}}</b> / {{run_id}}</p><p>{{error}}</p><p><a href="{{log_url}}">View logs</a></p>',
-       'html', 'seed'
-FROM templates t WHERE t.code = 'airflow.dag.failed';
-
-INSERT INTO template_versions (template_id, version, channel_type, subject, body, body_format, created_by)
-SELECT t.id, 1, 'msteams',
-       NULL,
-       '{
-         "type":"AdaptiveCard",
-         "body":[
-           {"type":"TextBlock","size":"Large","weight":"Bolder","text":"DAG failed: {{dag_id}}","color":"Attention"},
-           {"type":"FactSet","facts":[
-             {"title":"Run","value":"{{run_id}}"},
-             {"title":"Date","value":"{{logical_date}}"},
-             {"title":"Env","value":"{{env}}"}
-           ]},
-           {"type":"TextBlock","text":"{{error}}","wrap":true}
-         ],
-         "actions":[{"type":"Action.OpenUrl","title":"Open logs","url":"{{log_url}}"}]
-       }',
-       'adaptive_card', 'seed'
-FROM templates t WHERE t.code = 'airflow.dag.failed';
-
-INSERT INTO routing_rules (code, display_name, source_system_id, event_type, severity_min, template_id, priority, status)
+INSERT INTO notification_targets (notification_id, channel_id, channel_endpoint_id, recipient_group_id, sort_order)
 SELECT
-    'airflow-dag-failed-prod',
-    'Airflow DAG failed → DE oncall',
-    s.id,
-    'dag.failed',
-    'error',
-    t.id,
-    10,
-    'active'
-FROM source_systems s
-JOIN templates t ON t.code = 'airflow.dag.failed'
-WHERE s.code = 'airflow';
-
-INSERT INTO routing_rule_channels (rule_id, channel_id, channel_endpoint_id, recipient_group_id)
-SELECT rr.id, ch.id, ce.id, g.id
-FROM routing_rules rr
-JOIN channels ch ON ch.code IN ('email', 'msteams')
+    'n1000000-0000-4000-8000-000000000001',
+    ch.id,
+    ce.id,
+    g.id,
+    CASE ch.code WHEN 'email' THEN 1 WHEN 'msteams' THEN 2 ELSE 3 END
+FROM channels ch
 JOIN channel_endpoints ce ON ce.channel_id = ch.id AND ce.is_default
 JOIN recipient_groups g ON g.code = 'de-oncall'
-WHERE rr.code = 'airflow-dag-failed-prod';
+WHERE ch.code IN ('email', 'msteams');
+
+INSERT INTO service_integrations (code, display_name, channel_endpoint_id, request_mapping, is_active)
+SELECT
+    'pagerduty-bridge',
+    'PagerDuty Bridge',
+    ce.id,
+    '{"summary":"{{payload.service}} alert","severity":"{{severity}}"}'::jsonb,
+    TRUE
+FROM channel_endpoints ce WHERE ce.code = 'svc-pager-bridge';
