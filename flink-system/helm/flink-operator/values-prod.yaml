@@ -1,0 +1,41 @@
+# Production overrides for Flink Kubernetes Operator 1.16.0
+
+replicas: 1
+
+image:
+  repository: apache/flink-kubernetes-operator
+  pullPolicy: IfNotPresent
+  tag: "1.16.0"
+
+imagePullSecrets:
+  - name: dockerhub-regcred
+
+# Limit watch scope when running multi-tenant clusters.
+watchNamespaces:
+  - flink
+
+webhook:
+  create: true
+
+# Requires cert-manager (see cert-manager/helm in this repo).
+# tls.create stays false; webhook uses cert-manager Certificate from the chart.
+
+operatorPod:
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+defaultConfiguration:
+  create: true
+  append: true
+  flink-conf.yaml: |+
+    kubernetes.operator.metrics.reporter.slf4j.factory.class: org.apache.flink.metrics.slf4j.Slf4jReporterFactory
+    kubernetes.operator.metrics.reporter.slf4j.interval: 5 MINUTE
+    kubernetes.operator.reconcile.interval: 15 s
+    kubernetes.operator.observer.progress-check.interval: 5 s
+    # Prefer last-state upgrades for streaming sync jobs when savepoints are configured.
+    kubernetes.operator.job.upgrade.ignore-pending-checkpoint: true

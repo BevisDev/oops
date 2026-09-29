@@ -1,0 +1,15 @@
+apiVersion: v2
+name: flink-cluster
+description: Flink session / application deployments for realtime source sync
+type: application
+version: 0.1.0
+appVersion: "1.20.2"
+keywords:
+  - flink
+  - cdc
+  - streaming
+  - sync
+maintainers:
+  - name: Truong Thanh Binh
+    email: dev.binhtt@gmail.com
+    url: https://github.com/BevisDev
