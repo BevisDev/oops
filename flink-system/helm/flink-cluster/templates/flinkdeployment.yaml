@@ -1,0 +1,104 @@
+{{- if .Values.session.enabled }}
+---
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: {{ required "session.name is required" .Values.session.name }}
+  labels:
+    {{- include "flink-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: session
+  {{- with .Values.session.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  image: {{ .Values.session.image | default (include "flink-cluster.image" .) | quote }}
+  {{- with .Values.image.pullPolicy }}
+  imagePullPolicy: {{ . }}
+  {{- end }}
+  flinkVersion: {{ include "flink-cluster.flinkVersion" . }}
+  serviceAccount: {{ include "flink-cluster.serviceAccountName" . }}
+  flinkConfiguration:
+    {{- toYaml (.Values.session.flinkConfiguration | default .Values.flinkConfiguration) | nindent 4 }}
+  jobManager:
+    {{- toYaml (.Values.session.jobManager | default .Values.jobManager) | nindent 4 }}
+  taskManager:
+    {{- toYaml (.Values.session.taskManager | default .Values.taskManager) | nindent 4 }}
+  {{- with (.Values.session.podTemplate | default .Values.podTemplate) }}
+  podTemplate:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.session.mode }}
+  mode: {{ . }}
+  {{- end }}
+{{- end }}
+
+{{- range $job := .Values.deployments }}
+{{- if ne $job.enabled false }}
+---
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: {{ required "deployments[].name is required" $job.name }}
+  labels:
+    {{- include "flink-cluster.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: application
+    flink.apache.org/job: {{ $job.name | quote }}
+  {{- with $job.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  image: {{ $job.image | default (include "flink-cluster.image" $) | quote }}
+  {{- with $.Values.image.pullPolicy }}
+  imagePullPolicy: {{ . }}
+  {{- end }}
+  flinkVersion: {{ $job.flinkVersion | default (include "flink-cluster.flinkVersion" $) }}
+  serviceAccount: {{ include "flink-cluster.serviceAccountName" $ }}
+  flinkConfiguration:
+    {{- if $job.flinkConfiguration }}
+    {{- toYaml $job.flinkConfiguration | nindent 4 }}
+    {{- else }}
+    {{- toYaml $.Values.flinkConfiguration | nindent 4 }}
+    {{- end }}
+  jobManager:
+    {{- toYaml ($job.jobManager | default $.Values.jobManager) | nindent 4 }}
+  taskManager:
+    {{- toYaml ($job.taskManager | default $.Values.taskManager) | nindent 4 }}
+  {{- if $job.sqlConfigMap }}
+  podTemplate:
+    spec:
+      containers:
+        - name: flink-main-container
+          volumeMounts:
+            - name: sql-scripts
+              mountPath: /opt/flink/usrlib/sql-scripts
+          {{- with $job.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: sql-scripts
+          configMap:
+            name: {{ $job.sqlConfigMap }}
+      {{- with $.Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- else if or $job.podTemplate $.Values.podTemplate }}
+  podTemplate:
+    {{- toYaml ($job.podTemplate | default $.Values.podTemplate) | nindent 4 }}
+  {{- end }}
+  job:
+    jarURI: {{ $job.jarURI | default "local:///opt/flink/usrlib/sql-runner.jar" | quote }}
+    {{- with $job.args }}
+    args:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    parallelism: {{ default 1 $job.parallelism }}
+    upgradeMode: {{ default "stateless" $job.upgradeMode }}
+    {{- with $job.state }}
+    state: {{ . }}
+    {{- end }}
+{{- end }}
+{{- end }}

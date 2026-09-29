@@ -1,0 +1,17 @@
+{{- range $cm := .Values.sqlConfigMaps }}
+{{- if ne $cm.enabled false }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ required "sqlConfigMaps[].name is required" $cm.name }}
+  labels:
+    {{- include "flink-cluster.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: sql-script
+data:
+  {{- range $file, $content := $cm.files }}
+  {{ $file }}: |
+    {{- $content | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}

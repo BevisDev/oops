@@ -1,0 +1,16 @@
+1. Flink SQL Runner
+{{- if .Values.session.enabled }}
+2. Session cluster: {{ .Values.session.name }}
+   Submit jobs with FlinkSessionJob (see values.sessionJobs).
+{{- end }}
+{{- if .Values.deployments }}
+3. Application deployments:
+{{- range .Values.deployments }}
+{{- if ne .enabled false }}
+   - {{ .name }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+UI (port-forward JobManager):
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Values.session.name | default "flink-session" }}-rest 8081:8081

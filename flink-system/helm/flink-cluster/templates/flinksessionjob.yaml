@@ -1,0 +1,34 @@
+{{- range $job := .Values.sessionJobs }}
+{{- if ne $job.enabled false }}
+---
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkSessionJob
+metadata:
+  name: {{ required "sessionJobs[].name is required" $job.name }}
+  labels:
+    {{- include "flink-cluster.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: session-job
+    flink.apache.org/job: {{ $job.name | quote }}
+  {{- with $job.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  deploymentName: {{ required "sessionJobs[].deploymentName is required (session cluster name)" $job.deploymentName }}
+  {{- with $job.flinkConfiguration }}
+  flinkConfiguration:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  job:
+    jarURI: {{ $job.jarURI | default "local:///opt/flink/usrlib/sql-runner.jar" | quote }}
+    {{- with $job.args }}
+    args:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    parallelism: {{ default 1 $job.parallelism }}
+    upgradeMode: {{ default "stateless" $job.upgradeMode }}
+    {{- with $job.state }}
+    state: {{ . }}
+    {{- end }}
+{{- end }}
+{{- end }}
